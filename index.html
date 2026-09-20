@@ -1,0 +1,1168 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="color-scheme" content="light dark">
+<meta name="description" content="写真をまとめて1つのPDFにする。すべて端末内で処理され、写真はどこにも送信されません。">
+<title>写真 → PDF</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20viewBox%3D%220%200%2032%2032%22%3E%3Crect%20width%3D%2232%22%20height%3D%2232%22%20rx%3D%227%22%20fill%3D%22%232f6df6%22%2F%3E%3Crect%20x%3D%227%22%20y%3D%226%22%20width%3D%2214%22%20height%3D%2218%22%20rx%3D%222%22%20fill%3D%22%23fff%22%2F%3E%3Crect%20x%3D%2211%22%20y%3D%2210%22%20width%3D%2214%22%20height%3D%2218%22%20rx%3D%222%22%20fill%3D%22%23fff%22%20stroke%3D%22%232f6df6%22%20stroke-width%3D%221.5%22%2F%3E%3Cpath%20d%3D%22M14%2015h8M14%2018.5h8M14%2022h5%22%20stroke%3D%22%232f6df6%22%20stroke-width%3D%221.6%22%20stroke-linecap%3D%22round%22%2F%3E%3C%2Fsvg%3E">
+<style>
+:root{
+  --bg:#f6f7f9; --surface:#ffffff; --surface-2:#f0f2f5; --border:#dfe3e8;
+  --text:#16191d; --muted:#697080; --accent:#2f6df6; --accent-fg:#ffffff;
+  --danger:#d8453c; --warn:#b26a00; --ok:#177245;
+  --radius:12px; --shadow:0 1px 2px rgba(16,20,28,.06),0 4px 14px rgba(16,20,28,.05);
+}
+@media (prefers-color-scheme: dark){
+  :root{
+    --bg:#14161a; --surface:#1c1f25; --surface-2:#23272e; --border:#333941;
+    --text:#e8eaee; --muted:#9aa2b1; --accent:#5a8cff; --accent-fg:#0e1116;
+    --danger:#ff6b60; --warn:#e0a33a; --ok:#4cc38a;
+    --shadow:0 1px 2px rgba(0,0,0,.3),0 4px 14px rgba(0,0,0,.25);
+  }
+}
+*{box-sizing:border-box}
+html,body{margin:0;padding:0}
+body{
+  background:var(--bg); color:var(--text);
+  font-family:-apple-system,BlinkMacSystemFont,"Hiragino Sans","Hiragino Kaku Gothic ProN","Noto Sans JP","Yu Gothic",Meiryo,system-ui,sans-serif;
+  font-size:15px; line-height:1.6;
+  -webkit-text-size-adjust:100%;
+  padding-bottom:calc(96px + env(safe-area-inset-bottom));
+}
+header{
+  position:sticky; top:0; z-index:20;
+  background:color-mix(in srgb, var(--surface) 88%, transparent);
+  -webkit-backdrop-filter:blur(12px); backdrop-filter:blur(12px);
+  border-bottom:1px solid var(--border);
+  padding:12px 16px calc(12px) 16px;
+  padding-top:calc(12px + env(safe-area-inset-top));
+}
+header h1{margin:0;font-size:17px;font-weight:650;letter-spacing:.01em}
+header p{margin:2px 0 0;font-size:12px;color:var(--muted)}
+main{max-width:860px;margin:0 auto;padding:16px}
+.card{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);box-shadow:var(--shadow);padding:16px;margin-bottom:14px}
+.card h2{margin:0 0 10px;font-size:13px;font-weight:650;color:var(--muted);letter-spacing:.06em;text-transform:uppercase}
+
+/* ---- drop zone ---- */
+#drop{
+  border:2px dashed var(--border); border-radius:var(--radius);
+  background:var(--surface); text-align:center; padding:28px 16px; margin-bottom:14px;
+  transition:border-color .15s, background .15s;
+}
+#drop.over{border-color:var(--accent); background:color-mix(in srgb, var(--accent) 8%, var(--surface))}
+#drop .hint{font-size:12.5px;color:var(--muted);margin-top:10px}
+.btn{
+  appearance:none;border:1px solid var(--border);background:var(--surface-2);color:var(--text);
+  font:inherit;font-weight:600;font-size:14px;padding:10px 16px;border-radius:10px;cursor:pointer;
+  transition:filter .12s, background .12s; min-height:42px;
+}
+.btn:hover:not(:disabled){filter:brightness(.97)}
+.btn:active:not(:disabled){transform:translateY(1px)}
+.btn:disabled{opacity:.45;cursor:not-allowed}
+.btn.primary{background:var(--accent);color:var(--accent-fg);border-color:transparent}
+.btn.danger{color:var(--danger)}
+.btn.sm{font-size:12.5px;padding:6px 11px;min-height:32px;border-radius:8px}
+.btn-row{display:flex;gap:8px;flex-wrap:wrap;justify-content:center}
+
+/* ---- options ---- */
+.opt{display:flex;align-items:flex-start;justify-content:space-between;gap:14px;padding:11px 0;border-top:1px solid var(--border)}
+.opt:first-of-type{border-top:none;padding-top:0}
+.opt .label{font-size:14px;font-weight:600}
+.opt .desc{font-size:12px;color:var(--muted);margin-top:2px;max-width:44ch}
+.seg{display:inline-flex;background:var(--surface-2);border:1px solid var(--border);border-radius:9px;padding:2px;flex:none}
+.seg button{
+  appearance:none;border:none;background:none;color:var(--muted);font:inherit;font-size:13px;font-weight:600;
+  padding:7px 12px;border-radius:7px;cursor:pointer;white-space:nowrap;
+}
+.seg button[aria-pressed="true"]{background:var(--surface);color:var(--text);box-shadow:0 1px 2px rgba(0,0,0,.12)}
+input[type=text]{
+  font:inherit;font-size:14px;padding:9px 11px;border:1px solid var(--border);border-radius:9px;
+  background:var(--surface-2);color:var(--text);width:100%;max-width:260px;
+}
+input[type=text]:focus{outline:2px solid var(--accent);outline-offset:-1px}
+/* 狭い画面では設定を縦積みにする（説明文が細長い列に潰れるのを防ぐ） */
+@media (max-width:560px){
+  .opt{flex-direction:column;align-items:stretch;gap:9px}
+  .opt .desc{max-width:none}
+  .seg{align-self:stretch}
+  .seg button{flex:1 1 0;padding:8px 6px;text-align:center}
+  input[type=text]{max-width:none}
+}
+
+/* ---- grid ---- */
+#grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(104px,1fr));gap:10px;margin:0;padding:0;list-style:none}
+.tile{
+  position:relative;aspect-ratio:3/4;background:var(--surface-2);border:1px solid var(--border);
+  border-radius:10px;overflow:hidden;cursor:grab;touch-action:manipulation;
+}
+.tile img{width:100%;height:100%;object-fit:cover;display:block;pointer-events:none}
+.tile .num{
+  position:absolute;top:5px;left:5px;background:rgba(10,12,16,.78);color:#fff;
+  font-size:11px;font-weight:700;min-width:20px;height:20px;line-height:20px;text-align:center;
+  border-radius:10px;padding:0 5px;
+}
+.tile .del{
+  position:absolute;top:4px;right:4px;width:24px;height:24px;border-radius:12px;border:none;
+  background:rgba(10,12,16,.72);color:#fff;font-size:15px;line-height:24px;text-align:center;
+  cursor:pointer;padding:0;
+}
+.tile .name{
+  position:absolute;left:0;right:0;bottom:0;padding:12px 6px 4px;
+  background:linear-gradient(transparent,rgba(10,12,16,.8));color:#fff;font-size:10px;
+  white-space:nowrap;overflow:hidden;text-overflow:ellipsis;
+}
+.tile.dup{outline:3px solid var(--warn);outline-offset:-3px}
+.sortable-ghost{opacity:.35}
+.sortable-chosen{cursor:grabbing}
+.empty{color:var(--muted);font-size:13.5px;text-align:center;padding:20px 0}
+
+/* ---- duplicates ---- */
+.dgroup{border:1px solid var(--border);border-radius:10px;padding:12px;margin-top:10px;background:var(--surface-2)}
+.dgroup .head{display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;margin-bottom:9px}
+.dgroup .title{font-size:13px;font-weight:650}
+.dgroup .why{font-size:11.5px;color:var(--muted);font-weight:500}
+.dstrip{display:flex;gap:8px;overflow-x:auto;padding-bottom:4px}
+.dstrip figure{margin:0;flex:none;width:82px}
+.dstrip img{width:82px;height:82px;object-fit:cover;border-radius:8px;border:1px solid var(--border);display:block}
+.dstrip figcaption{font-size:10.5px;color:var(--muted);margin-top:3px;text-align:center;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.dstrip .keep{color:var(--ok);font-weight:700}
+.badge{display:inline-block;font-size:11px;font-weight:700;padding:2px 7px;border-radius:6px;background:var(--surface);border:1px solid var(--border);color:var(--muted)}
+
+/* ---- progress / bar ---- */
+.prog{margin-top:10px;font-size:12.5px;color:var(--muted)}
+.prog .track{height:6px;background:var(--surface-2);border:1px solid var(--border);border-radius:4px;overflow:hidden;margin-top:5px}
+.prog .fill{height:100%;background:var(--accent);width:0%;transition:width .2s}
+#bar{
+  position:fixed;left:0;right:0;bottom:0;z-index:30;
+  background:color-mix(in srgb, var(--surface) 92%, transparent);
+  -webkit-backdrop-filter:blur(12px); backdrop-filter:blur(12px);
+  border-top:1px solid var(--border);
+  padding:12px 16px calc(12px + env(safe-area-inset-bottom));
+}
+#bar .inner{max-width:860px;margin:0 auto;display:flex;align-items:center;gap:12px}
+#bar .count{font-size:13px;color:var(--muted);flex:1;min-width:0}
+#bar .count strong{color:var(--text);font-size:15px}
+#make{flex:none;padding:12px 22px;font-size:15px}
+.note{font-size:12px;color:var(--muted);margin-top:8px}
+.err{color:var(--danger);font-size:12.5px;margin-top:8px;white-space:pre-wrap}
+/* hidden属性が .btn-row の display:flex に負けないようにする（UAスタイルより著者スタイルが優先されるため） */
+[hidden]{display:none !important}
+.visually-hidden{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap}
+</style>
+</head>
+<body>
+<header>
+  <h1>写真 → PDF</h1>
+  <p>すべて端末内で処理されます。写真はどこにもアップロードされません。</p>
+</header>
+
+<main>
+  <div id="drop">
+    <div class="btn-row">
+      <button class="btn primary" id="pick">写真を選ぶ</button>
+      <button class="btn" id="pickCam">カメラで撮る</button>
+    </div>
+    <div class="hint">ここにドラッグ&amp;ドロップもできます／HEIC・JPEG・PNG対応／枚数制限なし</div>
+    <input type="file" id="file" accept="image/*,.heic,.heif" multiple class="visually-hidden">
+    <input type="file" id="fileCam" accept="image/*" capture="environment" multiple class="visually-hidden">
+    <div class="prog" id="addProg" hidden><span id="addProgText"></span><div class="track"><div class="fill" id="addProgFill"></div></div></div>
+    <div class="err" id="addErr" hidden></div>
+  </div>
+
+  <section class="card">
+    <h2>設定</h2>
+    <div class="opt">
+      <div><div class="label">ページの形</div><div class="desc" id="pageDesc"></div></div>
+      <div class="seg" id="pageMode" role="group" aria-label="ページの形">
+        <button data-v="a4" aria-pressed="true">A4に合わせる</button>
+        <button data-v="fit" aria-pressed="false">写真ぴったり</button>
+      </div>
+    </div>
+    <div class="opt">
+      <div><div class="label">画質</div><div class="desc" id="qDesc"></div></div>
+      <div class="seg" id="quality" role="group" aria-label="画質">
+        <button data-v="light" aria-pressed="false">軽さ優先</button>
+        <button data-v="std" aria-pressed="true">標準</button>
+        <button data-v="high" aria-pressed="false">高画質</button>
+      </div>
+    </div>
+    <div class="opt">
+      <div><div class="label">ファイル名</div><div class="desc">保存されるPDFの名前です。</div></div>
+      <input type="text" id="fname" placeholder="photos" autocomplete="off" spellcheck="false">
+    </div>
+  </section>
+
+  <section class="card">
+    <h2>写真の順番 <span class="badge" id="orderHint">ドラッグで並べ替え</span></h2>
+    <ul id="grid"></ul>
+    <div class="empty" id="gridEmpty">まだ写真がありません。</div>
+    <div class="btn-row" id="gridTools" style="margin-top:12px;justify-content:flex-start" hidden>
+      <button class="btn sm" id="sortName">ファイル名順</button>
+      <button class="btn sm" id="sortDate">撮影日時順</button>
+      <button class="btn sm" id="reverse">逆順</button>
+      <button class="btn sm danger" id="clear">全部消す</button>
+    </div>
+  </section>
+
+  <section class="card">
+    <h2>重複チェック</h2>
+    <div class="desc" style="font-size:13px;color:var(--muted);margin-bottom:11px">
+      同じ写真・撮り直した同じ書類・レイアウトは違うが内容が同じ書類、を見つけます。
+    </div>
+    <div class="btn-row" style="justify-content:flex-start">
+      <button class="btn" id="scanFast">見た目でチェック</button>
+      <button class="btn" id="scanOcr">内容でチェック（OCR）</button>
+      <button class="btn sm" id="dupClear" hidden>結果を消す</button>
+    </div>
+    <div class="note" id="dupNote">「見た目」は一瞬で終わります。「内容」は文字を読み取るため時間がかかり、初回のみ言語データを数十MBダウンロードします（それも端末内で完結します）。</div>
+    <div class="prog" id="scanProg" hidden><span id="scanProgText"></span><div class="track"><div class="fill" id="scanProgFill"></div></div></div>
+    <div class="err" id="scanErr" hidden></div>
+    <div id="dupResult"></div>
+  </section>
+</main>
+
+<div id="bar">
+  <div class="inner">
+    <div class="count" id="count"><strong>0</strong> 枚</div>
+    <button class="btn primary" id="make" disabled>PDFを作る</button>
+  </div>
+</div>
+
+<!-- ライブラリはリポジトリに同梱（vendor/）。オフラインでも動きます。 -->
+<script src="vendor/pdf-lib.min.js"></script>
+<script src="vendor/heic2any.min.js"></script>
+<script src="vendor/sortable.min.js"></script>
+<script>
+"use strict";
+
+/* =======================================================================
+   写真 → PDF
+   すべてブラウザ内で完結。画像は一切ネットワークに送信されない。
+   ======================================================================= */
+
+const $ = (id) => document.getElementById(id);
+
+const PRESETS = {
+  light: { maxEdge: 1400, quality: 0.72, label: "軽さ優先" },
+  std:   { maxEdge: 2200, quality: 0.82, label: "標準" },
+  high:  { maxEdge: 3600, quality: 0.92, label: "高画質" },
+};
+const PAGE_DESC = {
+  a4:  "全ページA4に統一し、余白をつけて中央に配置します。写真が横長ならそのページだけ横向きになります。印刷や書類提出向き。",
+  fit: "写真の縦横比そのままのページを作り、余白なしで敷き詰めます。写真の見栄え重視。",
+};
+const Q_DESC = {
+  light: "長辺1400px・強めの圧縮。メールやLINEで送りやすい軽さになります。",
+  std:   "長辺2200px・見た目はほぼそのまま。迷ったらこれ。",
+  high:  "長辺3600px・ほぼ劣化なし。細かい文字を残したいときに。",
+};
+
+/* 元画像を保管する高画質中間形式（HEIC変換時のみ使用） */
+const SOURCE_JPEG_QUALITY = 0.95;
+
+/* --- 重複判定のパラメータ ---
+   実画像で測定して決めた値。詳しい根拠は README を参照。
+   要点：白い紙に黒い文字＝「書類」は、縮小するとどれも同じに見えるため、
+   画像だけで別の書類かどうかは判定できない。書類はOCRに回す。 */
+const SIG_N = 16;                    // 署名用グリッド（16x16のグレースケール）
+const VISUAL_MAX_DIST = 0.15;        // これ以下なら「見た目がほぼ同じ」
+const OCR_MIN_CHARS = 24;            // これ未満の文字数は内容比較の対象外
+const OCR_SIMILARITY = 0.62;         // 3-gram Jaccard のしきい値
+
+/* 「書類っぽさ」の判定条件（すべて満たすと書類とみなす） */
+const DOC_MAX_SATURATION = 0.18;     // 彩度が低い（紙は無彩色）
+const DOC_MIN_BRIGHT_RATIO = 0.55;   // 明るい画素が過半（紙は白い）
+const DOC_MAX_INK_RATIO = 0.35;      // 暗い画素は一部だけ（文字は面積が小さい）
+
+const state = {
+  items: [],
+  pageMode: "a4",
+  quality: "std",
+  groups: [],
+  busy: false,
+};
+let uid = 0;
+
+/* ---------------------------------------------------------------- utils */
+
+function setBusy(v) {
+  state.busy = v;
+  for (const el of document.querySelectorAll("button")) {
+    if (el.dataset.alwaysOn === "1") continue;
+    el.disabled = v || (el.id === "make" && state.items.length === 0);
+  }
+  if (!v) syncMakeButton();
+}
+function syncMakeButton() {
+  $("make").disabled = state.busy || state.items.length === 0;
+}
+function showProg(box, textEl, fillEl, text, ratio) {
+  box.hidden = false;
+  textEl.textContent = text;
+  fillEl.style.width = Math.max(0, Math.min(1, ratio)) * 100 + "%";
+}
+function hideProg(box) { box.hidden = true; }
+function showErr(el, msg) { el.hidden = false; el.textContent = msg; }
+function clearErr(el) { el.hidden = true; el.textContent = ""; }
+const nextFrame = () => new Promise((r) => requestAnimationFrame(() => r()));
+
+function isHeic(file) {
+  const t = (file.type || "").toLowerCase();
+  const n = (file.name || "").toLowerCase();
+  return t === "image/heic" || t === "image/heif" || n.endsWith(".heic") || n.endsWith(".heif");
+}
+
+function bytesLabel(n) {
+  if (n < 1024) return n + " B";
+  if (n < 1024 * 1024) return (n / 1024).toFixed(0) + " KB";
+  return (n / 1024 / 1024).toFixed(1) + " MB";
+}
+
+/* -------------------------------------------------------------- decoding */
+
+/* EXIFの回転を反映して画像をデコードする。
+   createImageBitmap の imageOrientation:'from-image' が本命で、
+   非対応環境では <img> にフォールバックする（多くのブラウザが自動回転する）。 */
+async function decodeImage(blob) {
+  if (typeof createImageBitmap === "function") {
+    try {
+      return await createImageBitmap(blob, { imageOrientation: "from-image" });
+    } catch (e) { /* fall through */ }
+    try {
+      return await createImageBitmap(blob);
+    } catch (e) { /* fall through */ }
+  }
+  const url = URL.createObjectURL(blob);
+  try {
+    return await new Promise((res, rej) => {
+      const img = new Image();
+      img.onload = () => res(img);
+      img.onerror = () => rej(new Error("画像を読み込めませんでした"));
+      img.src = url;
+    });
+  } finally {
+    setTimeout(() => URL.revokeObjectURL(url), 10000);
+  }
+}
+function imgWidth(im) { return im.width || im.naturalWidth; }
+function imgHeight(im) { return im.height || im.naturalHeight; }
+function releaseImage(im) { if (im && typeof im.close === "function") im.close(); }
+
+function drawScaled(im, maxEdge) {
+  const w0 = imgWidth(im), h0 = imgHeight(im);
+  const scale = Math.min(1, maxEdge / Math.max(w0, h0));
+  const w = Math.max(1, Math.round(w0 * scale));
+  const h = Math.max(1, Math.round(h0 * scale));
+  const c = document.createElement("canvas");
+  c.width = w; c.height = h;
+  const ctx = c.getContext("2d");
+  ctx.fillStyle = "#ffffff";
+  ctx.fillRect(0, 0, w, h);
+  ctx.imageSmoothingQuality = "high";
+  ctx.drawImage(im, 0, 0, w, h);
+  return c;
+}
+function canvasToBlob(canvas, type, quality) {
+  return new Promise((res, rej) => {
+    canvas.toBlob((b) => (b ? res(b) : rej(new Error("画像の変換に失敗しました"))), type, quality);
+  });
+}
+
+/* ------------------------------------------------------------------ EXIF */
+
+/* DateTimeOriginal だけを取り出す軽量パーサ（JPEGのAPP1のみ対応） */
+async function readExifDate(file) {
+  try {
+    const buf = await file.slice(0, 128 * 1024).arrayBuffer();
+    const dv = new DataView(buf);
+    if (dv.byteLength < 4 || dv.getUint16(0) !== 0xffd8) return null;
+    let off = 2;
+    while (off + 4 <= dv.byteLength) {
+      if (dv.getUint8(off) !== 0xff) break;
+      const marker = dv.getUint8(off + 1);
+      if (marker === 0xda || marker === 0xd9) break;
+      const size = dv.getUint16(off + 2);
+      if (marker === 0xe1 && off + 10 <= dv.byteLength && dv.getUint32(off + 4) === 0x45786966) {
+        return parseTiffDate(dv, off + 10);
+      }
+      off += 2 + size;
+    }
+  } catch (e) { /* ignore */ }
+  return null;
+}
+function parseTiffDate(dv, base) {
+  if (base + 8 > dv.byteLength) return null;
+  const bom = dv.getUint16(base);
+  const le = bom === 0x4949;
+  if (!le && bom !== 0x4d4d) return null;
+  const u16 = (o) => dv.getUint16(o, le);
+  const u32 = (o) => dv.getUint32(o, le);
+  const ifd0 = base + u32(base + 4);
+  const readAscii = (entry) => {
+    const count = u32(entry + 4);
+    let valOff = entry + 8;
+    if (count > 4) valOff = base + u32(entry + 8);
+    if (valOff + count > dv.byteLength) return null;
+    let s = "";
+    for (let i = 0; i < count; i++) {
+      const c = dv.getUint8(valOff + i);
+      if (c === 0) break;
+      s += String.fromCharCode(c);
+    }
+    return s;
+  };
+  const scanIfd = (ifd, want) => {
+    if (ifd + 2 > dv.byteLength) return null;
+    const n = u16(ifd);
+    for (let i = 0; i < n; i++) {
+      const e = ifd + 2 + i * 12;
+      if (e + 12 > dv.byteLength) break;
+      if (u16(e) === want) return e;
+    }
+    return null;
+  };
+  const exifPtr = scanIfd(ifd0, 0x8769);
+  let entry = null;
+  if (exifPtr) {
+    const sub = base + u32(exifPtr + 8);
+    entry = scanIfd(sub, 0x9003) || scanIfd(sub, 0x9004);
+  }
+  if (!entry) entry = scanIfd(ifd0, 0x0132);
+  if (!entry) return null;
+  const s = readAscii(entry);
+  if (!s) return null;
+  const m = s.match(/^(\d{4}):(\d{2}):(\d{2})[ T](\d{2}):(\d{2}):(\d{2})/);
+  if (!m) return null;
+  return new Date(+m[1], +m[2] - 1, +m[3], +m[4], +m[5], +m[6]).getTime();
+}
+
+/* ---------------------------------------------------------- 知覚ハッシュ */
+
+/* 画像の署名を作る。
+   - gray: コントラストを正規化した16x16のグレースケール。
+           明るさ・露出の違いに影響されにくく、多少の位置ずれにも耐える。
+   - isDocument: 「白い紙に文字」型の画像かどうか。
+                 この種の画像は縮小するとどれも似てしまうため、
+                 見た目による重複判定は行わない（OCRに回す）。 */
+function imageSignature(im) {
+  const N = SIG_N, A = 64; // A: 書類判定用の解析グリッド
+  const c = document.createElement("canvas");
+  c.width = A; c.height = A;
+  const ctx = c.getContext("2d", { willReadFrequently: true });
+  ctx.fillStyle = "#ffffff";
+  ctx.fillRect(0, 0, A, A);
+  ctx.drawImage(im, 0, 0, A, A);
+  const d = ctx.getImageData(0, 0, A, A).data;
+
+  let satSum = 0, bright = 0, ink = 0;
+  const lum = new Float32Array(A * A);
+  for (let i = 0; i < A * A; i++) {
+    const r = d[i * 4], g = d[i * 4 + 1], b = d[i * 4 + 2];
+    lum[i] = 0.299 * r + 0.587 * g + 0.114 * b;
+    const mx = Math.max(r, g, b), mn = Math.min(r, g, b);
+    satSum += mx === 0 ? 0 : (mx - mn) / mx;
+    if (lum[i] > 200) bright++;
+    if (lum[i] < 128) ink++;
+  }
+  const meanSat = satSum / (A * A);
+  const brightRatio = bright / (A * A);
+  const inkRatio = ink / (A * A);
+  const isDocument =
+    meanSat <= DOC_MAX_SATURATION &&
+    brightRatio >= DOC_MIN_BRIGHT_RATIO &&
+    inkRatio <= DOC_MAX_INK_RATIO;
+
+  /* 署名用に16x16へ描き直し、コントラストを目一杯に伸ばす */
+  c.width = N; c.height = N;
+  ctx.fillStyle = "#ffffff";
+  ctx.fillRect(0, 0, N, N);
+  ctx.drawImage(im, 0, 0, N, N);
+  const sd = ctx.getImageData(0, 0, N, N).data;
+  const g = new Float32Array(N * N);
+  let lo = Infinity, hi = -Infinity;
+  for (let i = 0; i < N * N; i++) {
+    g[i] = 0.299 * sd[i * 4] + 0.587 * sd[i * 4 + 1] + 0.114 * sd[i * 4 + 2];
+    if (g[i] < lo) lo = g[i];
+    if (g[i] > hi) hi = g[i];
+  }
+  const span = hi - lo;
+  const gray = new Uint8Array(N * N);
+  for (let i = 0; i < N * N; i++) {
+    gray[i] = span > 1 ? Math.round(((g[i] - lo) / span) * 255) : 128;
+  }
+  return { gray, isDocument, meanSat, brightRatio, inkRatio };
+}
+
+/* 2つの署名の距離（0=同一、1=正反対） */
+function signatureDistance(a, b) {
+  let s = 0;
+  for (let i = 0; i < a.length; i++) s += Math.abs(a[i] - b[i]);
+  return s / a.length / 255;
+}
+
+async function sha256Hex(blob) {
+  if (!(crypto && crypto.subtle)) return null;
+  try {
+    const buf = await blob.arrayBuffer();
+    const digest = await crypto.subtle.digest("SHA-256", buf);
+    return Array.from(new Uint8Array(digest)).map((b) => b.toString(16).padStart(2, "0")).join("");
+  } catch (e) { return null; }
+}
+
+/* ------------------------------------------------------------ 写真の追加 */
+
+async function addFiles(fileList) {
+  const files = Array.from(fileList).filter((f) => {
+    const t = (f.type || "").toLowerCase();
+    return t.startsWith("image/") || isHeic(f);
+  });
+  if (!files.length) return;
+
+  clearErr($("addErr"));
+  setBusy(true);
+  const failed = [];
+
+  for (let i = 0; i < files.length; i++) {
+    const f = files[i];
+    showProg($("addProg"), $("addProgText"), $("addProgFill"),
+      `読み込み中… ${i + 1} / ${files.length}　${f.name}`, i / files.length);
+    await nextFrame();
+    try {
+      await addOneFile(f);
+    } catch (e) {
+      failed.push(`${f.name}: ${e && e.message ? e.message : e}`);
+    }
+    render();
+  }
+
+  hideProg($("addProg"));
+  setBusy(false);
+  if (failed.length) {
+    showErr($("addErr"), `読み込めなかったファイル（${failed.length}件）\n` + failed.join("\n"));
+  }
+  invalidateGroups();
+}
+
+async function addOneFile(file) {
+  /* HEICはこの時点で一度だけJPEGに変換し、以降はそれを元データとして扱う。
+     （変換が重いので、PDF作成のたびにやり直さない） */
+  let source = file;
+  if (isHeic(file)) {
+    if (typeof heic2any !== "function") throw new Error("HEIC変換ライブラリを読み込めませんでした");
+    const converted = await heic2any({ blob: file, toType: "image/jpeg", quality: SOURCE_JPEG_QUALITY });
+    source = Array.isArray(converted) ? converted[0] : converted;
+  }
+
+  const exifDate = await readExifDate(file);
+  const im = await decodeImage(source);
+  try {
+    const w = imgWidth(im), h = imgHeight(im);
+    if (!w || !h) throw new Error("画像サイズを取得できませんでした");
+
+    const thumbCanvas = drawScaled(im, 320);
+    const thumbBlob = await canvasToBlob(thumbCanvas, "image/jpeg", 0.7);
+    const sig = imageSignature(im);
+    const sha = await sha256Hex(file);
+
+    state.items.push({
+      id: ++uid,
+      name: file.name || `photo-${uid}.jpg`,
+      size: file.size,
+      source,
+      w, h,
+      thumbUrl: URL.createObjectURL(thumbBlob),
+      sig, sha,
+      exifDate: exifDate || file.lastModified || 0,
+      ocrText: null,
+    });
+  } finally {
+    releaseImage(im);
+  }
+}
+
+function removeItem(id) {
+  const i = state.items.findIndex((it) => it.id === id);
+  if (i < 0) return;
+  URL.revokeObjectURL(state.items[i].thumbUrl);
+  state.items.splice(i, 1);
+  invalidateGroups();
+  render();
+}
+function clearAll() {
+  if (state.items.length && !confirm(`${state.items.length}枚すべて削除します。よろしいですか？`)) return;
+  for (const it of state.items) URL.revokeObjectURL(it.thumbUrl);
+  state.items = [];
+  invalidateGroups();
+  render();
+}
+
+/* -------------------------------------------------------------- 一覧描画 */
+
+let sortable = null;
+
+function render() {
+  const grid = $("grid");
+  const n = state.items.length;
+  $("gridEmpty").hidden = n > 0;
+  $("gridTools").hidden = n === 0;
+  $("orderHint").textContent = n > 1 ? "ドラッグで並べ替え" : "写真を追加すると並べ替えできます";
+
+  const dupIds = new Set();
+  for (const g of state.groups) for (const id of g.ids.slice(1)) dupIds.add(id);
+
+  grid.innerHTML = "";
+  const frag = document.createDocumentFragment();
+  state.items.forEach((it, idx) => {
+    const li = document.createElement("li");
+    li.className = "tile" + (dupIds.has(it.id) ? " dup" : "");
+    li.dataset.id = String(it.id);
+
+    const img = document.createElement("img");
+    img.src = it.thumbUrl;
+    img.alt = it.name;
+    img.loading = "lazy";
+
+    const num = document.createElement("span");
+    num.className = "num";
+    num.textContent = String(idx + 1);
+
+    const del = document.createElement("button");
+    del.className = "del";
+    del.type = "button";
+    del.title = "削除";
+    del.setAttribute("aria-label", it.name + " を削除");
+    del.textContent = "×";
+    del.dataset.alwaysOn = "1";
+    del.addEventListener("click", (e) => { e.stopPropagation(); removeItem(it.id); });
+
+    const name = document.createElement("span");
+    name.className = "name";
+    name.textContent = it.name;
+
+    li.append(img, num, del, name);
+    frag.appendChild(li);
+  });
+  grid.appendChild(frag);
+
+  const totalBytes = state.items.reduce((s, it) => s + (it.size || 0), 0);
+  $("count").innerHTML = `<strong>${n}</strong> 枚` + (n ? `　元データ ${bytesLabel(totalBytes)}` : "");
+  syncMakeButton();
+
+  if (!sortable && typeof Sortable !== "undefined") {
+    sortable = Sortable.create(grid, {
+      animation: 150,
+      delay: 120,
+      delayOnTouchOnly: true,
+      touchStartThreshold: 6,
+      filter: ".del",
+      onEnd: () => {
+        const order = Array.from(grid.children).map((el) => Number(el.dataset.id));
+        state.items.sort((a, b) => order.indexOf(a.id) - order.indexOf(b.id));
+        render();
+      },
+    });
+  }
+}
+
+/* ------------------------------------------------------------ PDF の作成 */
+
+const A4_SHORT = 595.28, A4_LONG = 841.89, A4_MARGIN = 24;
+
+async function buildPdf() {
+  if (!state.items.length) return;
+  if (typeof PDFLib === "undefined") {
+    showErr($("addErr"), "PDFライブラリを読み込めませんでした。ネットワーク接続を確認して、ページを再読み込みしてください。");
+    return;
+  }
+  clearErr($("addErr"));
+  setBusy(true);
+  const preset = PRESETS[state.quality];
+
+  try {
+    const doc = await PDFLib.PDFDocument.create();
+    doc.setTitle(pdfFileName().replace(/\.pdf$/i, ""));
+    doc.setCreator("写真 → PDF");
+    doc.setProducer("写真 → PDF");
+
+    for (let i = 0; i < state.items.length; i++) {
+      const it = state.items[i];
+      showProg($("addProg"), $("addProgText"), $("addProgFill"),
+        `PDFを作成中… ${i + 1} / ${state.items.length}`, i / state.items.length);
+      await nextFrame();
+
+      const im = await decodeImage(it.source);
+      let jpegBytes, iw, ih;
+      try {
+        const canvas = drawScaled(im, preset.maxEdge);
+        iw = canvas.width; ih = canvas.height;
+        const blob = await canvasToBlob(canvas, "image/jpeg", preset.quality);
+        jpegBytes = new Uint8Array(await blob.arrayBuffer());
+        canvas.width = canvas.height = 0;
+      } finally {
+        releaseImage(im);
+      }
+
+      const embedded = await doc.embedJpg(jpegBytes);
+
+      if (state.pageMode === "a4") {
+        const landscape = iw > ih;
+        const pw = landscape ? A4_LONG : A4_SHORT;
+        const ph = landscape ? A4_SHORT : A4_LONG;
+        const page = doc.addPage([pw, ph]);
+        const scale = Math.min((pw - A4_MARGIN * 2) / iw, (ph - A4_MARGIN * 2) / ih);
+        const dw = iw * scale, dh = ih * scale;
+        page.drawImage(embedded, { x: (pw - dw) / 2, y: (ph - dh) / 2, width: dw, height: dh });
+      } else {
+        const scale = A4_LONG / Math.max(iw, ih);
+        const pw = iw * scale, ph = ih * scale;
+        const page = doc.addPage([pw, ph]);
+        page.drawImage(embedded, { x: 0, y: 0, width: pw, height: ph });
+      }
+    }
+
+    showProg($("addProg"), $("addProgText"), $("addProgFill"), "書き出し中…", 0.97);
+    await nextFrame();
+    const bytes = await doc.save();
+    downloadBlob(new Blob([bytes], { type: "application/pdf" }), pdfFileName());
+    showProg($("addProg"), $("addProgText"), $("addProgFill"),
+      `完成：${state.items.length}ページ / ${bytesLabel(bytes.length)}`, 1);
+    setTimeout(() => hideProg($("addProg")), 6000);
+  } catch (e) {
+    hideProg($("addProg"));
+    showErr($("addErr"), "PDFの作成に失敗しました： " + (e && e.message ? e.message : e));
+  } finally {
+    setBusy(false);
+  }
+}
+
+function pdfFileName() {
+  let base = ($("fname").value || "").trim().replace(/[\\/:*?"<>|]/g, "").replace(/\.pdf$/i, "");
+  if (!base) {
+    const d = new Date();
+    const p = (x) => String(x).padStart(2, "0");
+    base = `photos-${d.getFullYear()}${p(d.getMonth() + 1)}${p(d.getDate())}-${p(d.getHours())}${p(d.getMinutes())}`;
+  }
+  return base + ".pdf";
+}
+
+function downloadBlob(blob, filename) {
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = filename;
+  a.rel = "noopener";
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 120000);
+}
+
+/* ------------------------------------------------------------ 重複の検出 */
+
+function invalidateGroups() {
+  state.groups = [];
+  $("dupResult").innerHTML = "";
+  $("dupClear").hidden = true;
+}
+
+function makeUnionFind(n) {
+  const p = new Int32Array(n);
+  for (let i = 0; i < n; i++) p[i] = i;
+  const find = (x) => { while (p[x] !== x) { p[x] = p[p[x]]; x = p[x]; } return x; };
+  return { find, union: (a, b) => { a = find(a); b = find(b); if (a !== b) p[b] = a; } };
+}
+
+/* 検出理由の強さ：完全一致 > 見た目 > 内容 */
+const REASON_RANK = { exact: 3, visual: 2, text: 1 };
+const REASON_LABEL = { exact: "完全に同じ画像", visual: "見た目がほぼ同じ", text: "書かれている内容が同じ" };
+
+function groupFromEdges(edges) {
+  const n = state.items.length;
+  const uf = makeUnionFind(n);
+  for (const e of edges) uf.union(e.a, e.b);
+
+  const buckets = new Map();
+  for (let i = 0; i < n; i++) {
+    const r = uf.find(i);
+    if (!buckets.has(r)) buckets.set(r, []);
+    buckets.get(r).push(i);
+  }
+
+  const groups = [];
+  for (const idxs of buckets.values()) {
+    if (idxs.length < 2) continue;
+    const inner = edges.filter((e) => idxs.includes(e.a) && idxs.includes(e.b));
+    let best = inner[0];
+    for (const e of inner) {
+      if (REASON_RANK[e.reason] > REASON_RANK[best.reason] ||
+          (REASON_RANK[e.reason] === REASON_RANK[best.reason] && e.score > best.score)) best = e;
+    }
+    groups.push({
+      ids: idxs.map((i) => state.items[i].id),
+      reason: best.reason,
+      score: best.score,
+    });
+  }
+  groups.sort((a, b) => REASON_RANK[b.reason] - REASON_RANK[a.reason] || b.score - a.score);
+  return groups;
+}
+
+/* A: 完全一致（SHA-256）＋ B: 見た目の類似（画像署名）
+
+   書類どうしは意図的に見た目で比較しない。
+   白い紙に黒い文字という画像は縮小するとどれも似てしまい、
+   「同じ書類の撮り直し」と「別の書類」を画像だけで区別できないため。
+   書類の重複は内容チェック（OCR）が担当する。 */
+function fastEdges() {
+  const items = state.items;
+  const edges = [];
+  for (let i = 0; i < items.length; i++) {
+    for (let j = i + 1; j < items.length; j++) {
+      const a = items[i], b = items[j];
+      if (a.sha && b.sha && a.sha === b.sha) {
+        edges.push({ a: i, b: j, reason: "exact", score: 1 });
+        continue;
+      }
+      if (!a.sig || !b.sig) continue;
+      if (a.sig.isDocument || b.sig.isDocument) continue;
+      const dist = signatureDistance(a.sig.gray, b.sig.gray);
+      if (dist <= VISUAL_MAX_DIST) {
+        edges.push({ a: i, b: j, reason: "visual", score: 1 - dist });
+      }
+    }
+  }
+  return edges;
+}
+
+function documentCount() {
+  return state.items.filter((it) => it.sig && it.sig.isDocument).length;
+}
+
+function scanFast() {
+  clearErr($("scanErr"));
+  if (state.items.length < 2) {
+    showErr($("scanErr"), "写真が2枚以上必要です。");
+    return;
+  }
+  state.groups = groupFromEdges(fastEdges());
+  renderGroups("見た目でチェック");
+  render();
+}
+
+/* C: 内容の一致（OCR → 文字列の3-gram 類似度） */
+
+function normalizeText(s) {
+  return (s || "")
+    .normalize("NFKC")
+    .toLowerCase()
+    .replace(/[^0-9a-z぀-ヿ一-鿿ｦ-ﾟ]/g, "");
+}
+function trigrams(s) {
+  const set = new Set();
+  for (let i = 0; i + 3 <= s.length; i++) set.add(s.slice(i, i + 3));
+  return set;
+}
+function similarity(A, B) {
+  if (!A.size || !B.size) return { jaccard: 0, overlap: 0 };
+  const small = A.size <= B.size ? A : B;
+  const big = A.size <= B.size ? B : A;
+  let inter = 0;
+  for (const g of small) if (big.has(g)) inter++;
+  return { jaccard: inter / (A.size + B.size - inter), overlap: inter / small.size };
+}
+
+function loadScript(src) {
+  return new Promise((res, rej) => {
+    const s = document.createElement("script");
+    s.src = src;
+    s.onload = () => res();
+    s.onerror = () => rej(new Error("ライブラリを読み込めませんでした（ネットワーク接続を確認してください）"));
+    document.head.appendChild(s);
+  });
+}
+
+async function scanOcr() {
+  clearErr($("scanErr"));
+  if (state.items.length < 2) {
+    showErr($("scanErr"), "写真が2枚以上必要です。");
+    return;
+  }
+  const pending = state.items.filter((it) => it.ocrText === null).length;
+  if (pending && !confirm(
+    `${pending}枚の文字を読み取ります。\n\n` +
+    "初回は日本語の学習データ（数十MB）をダウンロードします。読み取りには1枚あたり数秒かかります。\n" +
+    "写真そのものは端末の外に出ません。\n\n実行しますか？"
+  )) return;
+
+  setBusy(true);
+  let worker = null;
+  try {
+    if (typeof Tesseract === "undefined") {
+      showProg($("scanProg"), $("scanProgText"), $("scanProgFill"), "OCRエンジンを準備中…", 0.02);
+      await loadScript("https://cdn.jsdelivr.net/npm/tesseract.js@5.1.1/dist/tesseract.min.js");
+    }
+    showProg($("scanProg"), $("scanProgText"), $("scanProgFill"), "日本語データを読み込み中…", 0.05);
+    await nextFrame();
+
+    worker = await Tesseract.createWorker(["jpn", "eng"], 1, {
+      logger: (m) => {
+        if (m && m.status === "loading language traineddata" && typeof m.progress === "number") {
+          showProg($("scanProg"), $("scanProgText"), $("scanProgFill"),
+            `日本語データを読み込み中… ${Math.round(m.progress * 100)}%`, 0.05 + m.progress * 0.15);
+        }
+      },
+    });
+
+    const todo = state.items.filter((it) => it.ocrText === null);
+    for (let i = 0; i < todo.length; i++) {
+      const it = todo[i];
+      showProg($("scanProg"), $("scanProgText"), $("scanProgFill"),
+        `文字を読み取り中… ${i + 1} / ${todo.length}　${it.name}`, 0.2 + (i / todo.length) * 0.75);
+      await nextFrame();
+
+      const im = await decodeImage(it.source);
+      let canvas = null;
+      try {
+        canvas = drawScaled(im, 1600);
+        const result = await worker.recognize(canvas);
+        it.ocrText = (result && result.data && result.data.text) || "";
+      } catch (e) {
+        it.ocrText = "";
+      } finally {
+        releaseImage(im);
+        if (canvas) { canvas.width = canvas.height = 0; }
+      }
+    }
+
+    showProg($("scanProg"), $("scanProgText"), $("scanProgFill"), "内容を照合中…", 0.97);
+    await nextFrame();
+
+    const edges = fastEdges();
+    const grams = state.items.map((it) => {
+      const norm = normalizeText(it.ocrText);
+      return norm.length >= OCR_MIN_CHARS ? trigrams(norm) : null;
+    });
+    let compared = 0;
+    for (let i = 0; i < state.items.length; i++) {
+      for (let j = i + 1; j < state.items.length; j++) {
+        if (!grams[i] || !grams[j]) continue;
+        compared++;
+        const { jaccard, overlap } = similarity(grams[i], grams[j]);
+        const minSize = Math.min(grams[i].size, grams[j].size);
+        if (jaccard >= OCR_SIMILARITY || (overlap >= 0.8 && minSize >= 60)) {
+          edges.push({ a: i, b: j, reason: "text", score: Math.max(jaccard, overlap) });
+        }
+      }
+    }
+
+    state.groups = groupFromEdges(edges);
+    const skipped = grams.filter((g) => !g).length;
+    renderGroups("内容でチェック", skipped);
+    render();
+    hideProg($("scanProg"));
+  } catch (e) {
+    hideProg($("scanProg"));
+    showErr($("scanErr"), "内容チェックに失敗しました： " + (e && e.message ? e.message : e));
+  } finally {
+    if (worker) { try { await worker.terminate(); } catch (e) {} }
+    setBusy(false);
+  }
+}
+
+/* ---------------------------------------------------------- 結果の表示 */
+
+function renderGroups(mode, skipped) {
+  const box = $("dupResult");
+  box.innerHTML = "";
+  $("dupClear").hidden = false;
+
+  const summary = document.createElement("div");
+  summary.style.cssText = "margin-top:12px;font-size:13.5px;font-weight:600";
+  const dupCount = state.groups.reduce((s, g) => s + g.ids.length - 1, 0);
+
+  if (!state.groups.length) {
+    summary.textContent = `${mode}：重複は見つかりませんでした。`;
+    summary.style.color = "var(--ok)";
+  } else {
+    summary.textContent = `${mode}：${state.groups.length}グループ・重複候補 ${dupCount}枚が見つかりました。`;
+  }
+  box.appendChild(summary);
+
+  const docs = documentCount();
+  if (docs > 0 && mode === "見た目でチェック") {
+    const hint = document.createElement("div");
+    hint.className = "note";
+    hint.innerHTML =
+      `書類らしき画像が <strong>${docs}枚</strong> あります。` +
+      "白い紙に文字が書かれた画像は、縮小するとどれも似た見た目になるため、" +
+      "見た目だけでは「同じ書類の撮り直し」と「別の書類」を区別できません。" +
+      "書類の重複は<strong>「内容でチェック（OCR）」</strong>をお使いください" +
+      "（完全に同じ画像ファイルの検出は書類でも行っています）。";
+    box.appendChild(hint);
+  }
+
+  if (typeof skipped === "number" && skipped > 0) {
+    const note = document.createElement("div");
+    note.className = "note";
+    note.textContent = `${skipped}枚は文字がほとんど読み取れなかったため、内容の比較からは除外しました（見た目のチェックは行っています）。`;
+    box.appendChild(note);
+  }
+
+  if (state.groups.length) {
+    const all = document.createElement("div");
+    all.className = "btn-row";
+    all.style.cssText = "justify-content:flex-start;margin-top:10px";
+    const btn = document.createElement("button");
+    btn.className = "btn sm danger";
+    btn.textContent = `重複候補 ${dupCount}枚をまとめて削除`;
+    btn.addEventListener("click", () => {
+      if (!confirm(`各グループの1枚目だけ残し、${dupCount}枚を削除します。よろしいですか？`)) return;
+      const kill = new Set();
+      for (const g of state.groups) for (const id of g.ids.slice(1)) kill.add(id);
+      for (const id of kill) {
+        const it = state.items.find((x) => x.id === id);
+        if (it) URL.revokeObjectURL(it.thumbUrl);
+      }
+      state.items = state.items.filter((it) => !kill.has(it.id));
+      invalidateGroups();
+      render();
+    });
+    all.appendChild(btn);
+    box.appendChild(all);
+  }
+
+  state.groups.forEach((g, gi) => {
+    const wrap = document.createElement("div");
+    wrap.className = "dgroup";
+
+    const head = document.createElement("div");
+    head.className = "head";
+    const title = document.createElement("div");
+    title.className = "title";
+    title.textContent = `グループ ${gi + 1}（${g.ids.length}枚）`;
+    const why = document.createElement("div");
+    why.className = "why";
+    why.textContent = `${REASON_LABEL[g.reason]}　一致度 ${Math.round(g.score * 100)}%`;
+    head.append(title, why);
+
+    const act = document.createElement("button");
+    act.className = "btn sm danger";
+    act.textContent = "1枚目以外を削除";
+    act.addEventListener("click", () => {
+      const kill = new Set(g.ids.slice(1));
+      for (const id of kill) {
+        const it = state.items.find((x) => x.id === id);
+        if (it) URL.revokeObjectURL(it.thumbUrl);
+      }
+      state.items = state.items.filter((it) => !kill.has(it.id));
+      state.groups.splice(gi, 1);
+      renderGroups(mode);
+      render();
+    });
+    head.appendChild(act);
+    wrap.appendChild(head);
+
+    const strip = document.createElement("div");
+    strip.className = "dstrip";
+    g.ids.forEach((id, k) => {
+      const it = state.items.find((x) => x.id === id);
+      if (!it) return;
+      const fig = document.createElement("figure");
+      const img = document.createElement("img");
+      img.src = it.thumbUrl;
+      img.alt = it.name;
+      const cap = document.createElement("figcaption");
+      if (k === 0) { cap.className = "keep"; cap.textContent = "残す"; }
+      else { cap.textContent = it.name; }
+      fig.append(img, cap);
+      strip.appendChild(fig);
+    });
+    wrap.appendChild(strip);
+    box.appendChild(wrap);
+  });
+}
+
+/* ------------------------------------------------------------ 画面の配線 */
+
+function initSegment(id, key, onChange) {
+  const box = $(id);
+  box.addEventListener("click", (e) => {
+    const btn = e.target.closest("button[data-v]");
+    if (!btn || state.busy) return;
+    state[key] = btn.dataset.v;
+    for (const b of box.querySelectorAll("button[data-v]")) {
+      b.setAttribute("aria-pressed", String(b === btn));
+    }
+    onChange();
+  });
+}
+
+function init() {
+  $("pageDesc").textContent = PAGE_DESC[state.pageMode];
+  $("qDesc").textContent = Q_DESC[state.quality];
+
+  initSegment("pageMode", "pageMode", () => { $("pageDesc").textContent = PAGE_DESC[state.pageMode]; });
+  initSegment("quality", "quality", () => { $("qDesc").textContent = Q_DESC[state.quality]; });
+
+  $("pick").addEventListener("click", () => $("file").click());
+  $("pickCam").addEventListener("click", () => $("fileCam").click());
+  for (const id of ["file", "fileCam"]) {
+    $(id).addEventListener("change", (e) => {
+      const files = e.target.files;
+      if (files && files.length) addFiles(files);
+      e.target.value = "";
+    });
+  }
+
+  const drop = $("drop");
+  for (const type of ["dragenter", "dragover"]) {
+    drop.addEventListener(type, (e) => { e.preventDefault(); drop.classList.add("over"); });
+  }
+  for (const type of ["dragleave", "drop"]) {
+    drop.addEventListener(type, (e) => { e.preventDefault(); drop.classList.remove("over"); });
+  }
+  drop.addEventListener("drop", (e) => {
+    if (state.busy) return;
+    const files = e.dataTransfer && e.dataTransfer.files;
+    if (files && files.length) addFiles(files);
+  });
+  /* ページ全体へのドロップでブラウザが画像を開いてしまうのを防ぐ */
+  window.addEventListener("dragover", (e) => e.preventDefault());
+  window.addEventListener("drop", (e) => e.preventDefault());
+
+  document.addEventListener("paste", (e) => {
+    if (state.busy || !e.clipboardData) return;
+    const files = Array.from(e.clipboardData.files || []);
+    if (files.length) { e.preventDefault(); addFiles(files); }
+  });
+
+  $("sortName").addEventListener("click", () => {
+    state.items.sort((a, b) => a.name.localeCompare(b.name, "ja", { numeric: true, sensitivity: "base" }));
+    render();
+  });
+  $("sortDate").addEventListener("click", () => {
+    state.items.sort((a, b) => (a.exifDate || 0) - (b.exifDate || 0));
+    render();
+  });
+  $("reverse").addEventListener("click", () => { state.items.reverse(); render(); });
+  $("clear").addEventListener("click", clearAll);
+
+  $("scanFast").addEventListener("click", scanFast);
+  $("scanOcr").addEventListener("click", scanOcr);
+  $("dupClear").addEventListener("click", () => { invalidateGroups(); render(); });
+
+  $("make").addEventListener("click", buildPdf);
+
+  window.addEventListener("beforeunload", (e) => {
+    if (state.items.length) { e.preventDefault(); e.returnValue = ""; }
+  });
+
+  render();
+}
+
+init();
+</script>
+</body>
+</html>
