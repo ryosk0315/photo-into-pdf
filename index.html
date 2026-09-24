@@ -145,8 +145,34 @@ input[type=text]:focus{outline:2px solid var(--accent);outline-offset:-1px}
 #bar .count{font-size:13px;color:var(--muted);flex:1;min-width:0}
 #bar .count strong{color:var(--text);font-size:15px}
 #make{flex:none;padding:12px 22px;font-size:15px}
+
+/* ---- 処理中オーバーレイ ---- */
+.overlay{
+  position:fixed;inset:0;z-index:50;display:flex;align-items:center;justify-content:center;
+  padding:24px;background:color-mix(in srgb, var(--bg) 80%, transparent);
+  -webkit-backdrop-filter:blur(6px); backdrop-filter:blur(6px);
+}
+.overlay-card{
+  background:var(--surface);border:1px solid var(--border);border-radius:16px;box-shadow:var(--shadow);
+  padding:28px 24px;max-width:360px;width:100%;text-align:center;
+}
+.spinner{
+  width:34px;height:34px;margin:0 auto 16px;border-radius:50%;
+  border:3px solid var(--surface-2);border-top-color:var(--accent);
+  animation:spin .8s linear infinite;
+}
+@keyframes spin{to{transform:rotate(360deg)}}
+.overlay-title{font-size:15px;font-weight:650}
+.overlay-count{font-size:22px;font-weight:700;margin-top:8px;font-variant-numeric:tabular-nums}
+.overlay .track{height:8px;background:var(--surface-2);border:1px solid var(--border);border-radius:5px;overflow:hidden;margin-top:14px}
+.overlay .fill{height:100%;background:var(--accent);width:0%;transition:width .15s}
+.overlay-sub{
+  font-size:12.5px;color:var(--muted);margin-top:10px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;
+}
+.overlay-card #overlayCancel{margin-top:16px}
 .note{font-size:12px;color:var(--muted);margin-top:8px}
 .err{color:var(--danger);font-size:12.5px;margin-top:8px;white-space:pre-wrap}
+.err.info{color:var(--muted)}
 /* hidden属性が .btn-row の display:flex に負けないようにする（UAスタイルより著者スタイルが優先されるため） */
 [hidden]{display:none !important}
 .visually-hidden{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap}
@@ -165,9 +191,9 @@ input[type=text]:focus{outline:2px solid var(--accent);outline-offset:-1px}
       <button class="btn" id="pickCam">カメラで撮る</button>
     </div>
     <div class="hint">ここにドラッグ&amp;ドロップもできます／HEIC・JPEG・PNG対応／枚数制限なし</div>
+    <div class="hint">※ 写真を選んだ直後、iPhoneが写真を準備するあいだ画面が反応しないことがあります（正常です。準備が終わり次第この後の読み込み画面に切り替わります）</div>
     <input type="file" id="file" accept="image/*,.heic,.heif" multiple class="visually-hidden">
     <input type="file" id="fileCam" accept="image/*" capture="environment" multiple class="visually-hidden">
-    <div class="prog" id="addProg" hidden><span id="addProgText"></span><div class="track"><div class="fill" id="addProgFill"></div></div></div>
     <div class="err" id="addErr" hidden></div>
   </div>
 
@@ -230,6 +256,17 @@ input[type=text]:focus{outline:2px solid var(--accent);outline-offset:-1px}
   </div>
 </div>
 
+<div id="overlay" class="overlay" hidden role="status" aria-live="polite">
+  <div class="overlay-card">
+    <div class="spinner" aria-hidden="true"></div>
+    <div class="overlay-title" id="overlayTitle">処理中</div>
+    <div class="overlay-count" id="overlayCount"></div>
+    <div class="track"><div class="fill" id="overlayFill"></div></div>
+    <div class="overlay-sub" id="overlaySub"></div>
+    <button class="btn sm" id="overlayCancel" hidden>キャンセル</button>
+  </div>
+</div>
+
 <!-- ライブラリはリポジトリに同梱（vendor/）。オフラインでも動きます。 -->
 <script src="vendor/pdf-lib.min.js"></script>
 <script src="vendor/heic2any.min.js"></script>
@@ -282,6 +319,7 @@ const state = {
   quality: "std",
   groups: [],
   busy: false,
+  cancelAdd: false,
 };
 let uid = 0;
 
@@ -304,9 +342,31 @@ function showProg(box, textEl, fillEl, text, ratio) {
   fillEl.style.width = Math.max(0, Math.min(1, ratio)) * 100 + "%";
 }
 function hideProg(box) { box.hidden = true; }
-function showErr(el, msg) { el.hidden = false; el.textContent = msg; }
-function clearErr(el) { el.hidden = true; el.textContent = ""; }
+function showErr(el, msg, { info = false } = {}) {
+  el.hidden = false;
+  el.textContent = msg;
+  el.classList.toggle("info", info);
+}
+function clearErr(el) { el.hidden = true; el.textContent = ""; el.classList.remove("info"); }
 const nextFrame = () => new Promise((r) => requestAnimationFrame(() => r()));
+
+function overlayShow(title, { cancel = false } = {}) {
+  $("overlayTitle").textContent = title;
+  $("overlayCount").textContent = "";
+  $("overlayFill").style.width = "0%";
+  $("overlaySub").textContent = "";
+  const cancelBtn = $("overlayCancel");
+  cancelBtn.hidden = !cancel;
+  cancelBtn.disabled = false;
+  cancelBtn.textContent = "キャンセル";
+  $("overlay").hidden = false;
+}
+function overlayUpdate(current, total, sub, ratio) {
+  $("overlayCount").textContent = total ? `${current} / ${total} 枚` : "";
+  $("overlayFill").style.width = Math.max(0, Math.min(1, ratio)) * 100 + "%";
+  $("overlaySub").textContent = sub || "";
+}
+function overlayHide() { $("overlay").hidden = true; }
 
 function isHeic(file) {
   const t = (file.type || "").toLowerCase();
@@ -522,12 +582,15 @@ async function addFiles(fileList) {
 
   clearErr($("addErr"));
   setBusy(true);
+  state.cancelAdd = false;
+  overlayShow("写真を読み込んでいます", { cancel: true });
   const failed = [];
+  let cancelled = false;
 
   for (let i = 0; i < files.length; i++) {
+    if (state.cancelAdd) { cancelled = true; break; }
     const f = files[i];
-    showProg($("addProg"), $("addProgText"), $("addProgFill"),
-      `読み込み中… ${i + 1} / ${files.length}　${f.name}`, i / files.length);
+    overlayUpdate(i + 1, files.length, f.name, i / files.length);
     await nextFrame();
     try {
       await addOneFile(f);
@@ -537,9 +600,11 @@ async function addFiles(fileList) {
     render();
   }
 
-  hideProg($("addProg"));
+  overlayHide();
   setBusy(false);
-  if (failed.length) {
+  if (cancelled) {
+    showErr($("addErr"), `${state.items.length}枚まで読み込んだ時点でキャンセルしました。`, { info: true });
+  } else if (failed.length) {
     showErr($("addErr"), `読み込めなかったファイル（${failed.length}件）\n` + failed.join("\n"));
   }
   invalidateGroups();
@@ -687,6 +752,7 @@ async function buildPdf() {
   }
   clearErr($("addErr"));
   setBusy(true);
+  overlayShow("PDFを作成しています");
   const preset = PRESETS[state.quality];
 
   try {
@@ -697,8 +763,7 @@ async function buildPdf() {
 
     for (let i = 0; i < state.items.length; i++) {
       const it = state.items[i];
-      showProg($("addProg"), $("addProgText"), $("addProgFill"),
-        `PDFを作成中… ${i + 1} / ${state.items.length}`, i / state.items.length);
+      overlayUpdate(i + 1, state.items.length, it.name, i / state.items.length);
       await nextFrame();
 
       const im = await decodeImage(it.source);
@@ -731,15 +796,16 @@ async function buildPdf() {
       }
     }
 
-    showProg($("addProg"), $("addProgText"), $("addProgFill"), "書き出し中…", 0.97);
+    overlayUpdate(state.items.length, state.items.length, "書き出し中…", 0.97);
     await nextFrame();
     const bytes = await doc.save();
     downloadBlob(new Blob([bytes], { type: "application/pdf" }), pdfFileName());
-    showProg($("addProg"), $("addProgText"), $("addProgFill"),
+    overlayUpdate(state.items.length, state.items.length,
       `完成：${state.items.length}ページ / ${bytesLabel(bytes.length)}`, 1);
-    setTimeout(() => hideProg($("addProg")), 6000);
+    await new Promise((r) => setTimeout(r, 1200));
+    overlayHide();
   } catch (e) {
-    hideProg($("addProg"));
+    overlayHide();
     showErr($("addErr"), "PDFの作成に失敗しました： " + (e && e.message ? e.message : e));
   } finally {
     setBusy(false);
@@ -1111,6 +1177,13 @@ function initSegment(id, key, onChange) {
 function init() {
   $("pageDesc").textContent = PAGE_DESC[state.pageMode];
   $("qDesc").textContent = Q_DESC[state.quality];
+
+  $("overlayCancel").dataset.alwaysOn = "1";
+  $("overlayCancel").addEventListener("click", () => {
+    state.cancelAdd = true;
+    $("overlayCancel").disabled = true;
+    $("overlayCancel").textContent = "キャンセル中…";
+  });
 
   initSegment("pageMode", "pageMode", () => { $("pageDesc").textContent = PAGE_DESC[state.pageMode]; });
   initSegment("quality", "quality", () => { $("qDesc").textContent = Q_DESC[state.quality]; });

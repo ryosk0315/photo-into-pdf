@@ -39,7 +39,7 @@ async function run(label, viewport, isMobile) {
   // --- 写真の追加 ---
   await page.setInputFiles("#file", all);
   await page.waitForFunction((n) => document.querySelectorAll("#grid .tile").length === n, all.length, { timeout: 60000 });
-  await page.waitForFunction(() => document.getElementById("addProg").hidden, null, { timeout: 60000 });
+  await page.waitForFunction(() => document.getElementById("overlay").hidden, null, { timeout: 60000 });
   check(`${all.length}枚すべて読み込まれた`, (await page.locator("#grid .tile").count()) === all.length);
   check("エラー表示なし", await page.locator("#addErr").isHidden());
   check("サムネイルが表示されている",
@@ -177,6 +177,54 @@ async function run(label, viewport, isMobile) {
 
 await run("desktop", { width: 1280, height: 900 }, false);
 await run("iphone", { width: 390, height: 844 }, true);
+
+/* 読み込み中オーバーレイの表示とキャンセル操作の確認 */
+{
+  const ctx = await browser.newContext({ viewport: { width: 390, height: 844 } });
+  const page = await ctx.newPage();
+  await page.goto(BASE + "/index.html", { waitUntil: "networkidle" });
+
+  // addOneFile を人為的に遅くして、キャンセル操作が間に合うようにする
+  await page.evaluate(() => {
+    const real = addOneFile;
+    window.addOneFile = async (f) => {
+      await new Promise((r) => setTimeout(r, 60));
+      return real(f);
+    };
+  });
+
+  await page.setInputFiles("#file", all);
+
+  await page.waitForFunction(() => !document.getElementById("overlay").hidden, null, { timeout: 5000 });
+  check("読み込み中はオーバーレイが表示される", true);
+  check("読み込み中はキャンセルボタンが見える", await page.locator("#overlayCancel").isVisible());
+  const countText = await page.textContent("#overlayCount");
+  check(`オーバーレイに枚数(N / ${all.length} 枚)が出る`, new RegExp(`/\\s*${all.length}\\s*枚`).test(countText), countText);
+
+  await page.click("#overlayCancel");
+  await page.waitForFunction(() => document.getElementById("overlay").hidden, null, { timeout: 10000 });
+  const addedCount = await page.evaluate(() => state.items.length);
+  check("キャンセルすると途中で読み込みが止まる", addedCount > 0 && addedCount < all.length, `${addedCount}/${all.length}`);
+  const errText = await page.textContent("#addErr");
+  check("キャンセルした旨が表示される", errText.includes("キャンセルしました"), errText);
+  check("キャンセル通知はエラー色ではなく控えめな表示になる",
+    await page.evaluate(() => document.getElementById("addErr").classList.contains("info")));
+
+  // PDF作成中はキャンセルボタンを出さない(作成途中で止められないため)
+  const [dl] = await Promise.all([
+    page.waitForEvent("download", { timeout: 30000 }),
+    (async () => {
+      await page.waitForFunction(() => !state.busy, null, { timeout: 5000 });
+      await page.click("#make");
+      await page.waitForFunction(() => !document.getElementById("overlay").hidden, null, { timeout: 5000 });
+    })(),
+  ]);
+  check("PDF作成中はキャンセルボタンを出さない",
+    await page.evaluate(() => document.getElementById("overlayCancel").hidden));
+  await page.waitForFunction(() => document.getElementById("overlay").hidden, null, { timeout: 15000 });
+
+  await ctx.close();
+}
 
 /* ダークモード表示の確認 */
 {
