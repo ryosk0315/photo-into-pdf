@@ -546,17 +546,26 @@ async function addFiles(fileList) {
 }
 
 async function addOneFile(file) {
-  /* HEICはこの時点で一度だけJPEGに変換し、以降はそれを元データとして扱う。
-     （変換が重いので、PDF作成のたびにやり直さない） */
+  /* HEICはできればブラウザに直接デコードさせる。
+     Safari(iPhone)はHEICをハードウェアで高速にデコードできるため、
+     まず変換なしでデコードを試み、失敗した場合だけ
+     （Safari以外の、HEICを扱えないブラウザ向けに）heic2anyで変換する。
+     常に変換すると、iPhoneで撮った写真を大量に読み込む際に
+     1枚あたり数秒かかる重い処理が毎回走ってしまい、極端に遅くなるため。 */
   let source = file;
+  let im = null;
   if (isHeic(file)) {
-    if (typeof heic2any !== "function") throw new Error("HEIC変換ライブラリを読み込めませんでした");
-    const converted = await heic2any({ blob: file, toType: "image/jpeg", quality: SOURCE_JPEG_QUALITY });
-    source = Array.isArray(converted) ? converted[0] : converted;
+    try {
+      im = await decodeImage(file);
+    } catch (e) {
+      if (typeof heic2any !== "function") throw new Error("HEIC変換ライブラリを読み込めませんでした");
+      const converted = await heic2any({ blob: file, toType: "image/jpeg", quality: SOURCE_JPEG_QUALITY });
+      source = Array.isArray(converted) ? converted[0] : converted;
+    }
   }
 
   const exifDate = await readExifDate(file);
-  const im = await decodeImage(source);
+  if (!im) im = await decodeImage(source);
   try {
     const w = imgWidth(im), h = imgHeight(im);
     if (!w || !h) throw new Error("画像サイズを取得できませんでした");
