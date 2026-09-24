@@ -1,6 +1,6 @@
 import { chromium } from "playwright";
 import { readFileSync, readdirSync, mkdirSync, rmSync } from "node:fs";
-import { join, dirname } from "node:path";
+import { join, dirname, basename } from "node:path";
 import { fileURLToPath } from "node:url";
 import { PDFDocument } from "pdf-lib";
 
@@ -41,6 +41,12 @@ async function run(label, viewport, isMobile) {
   await page.waitForFunction((n) => document.querySelectorAll("#grid .tile").length === n, all.length, { timeout: 60000 });
   await page.waitForFunction(() => document.getElementById("overlay").hidden, null, { timeout: 60000 });
   check(`${all.length}枚すべて読み込まれた`, (await page.locator("#grid .tile").count()) === all.length);
+  {
+    const expectedNames = all.map((p) => basename(p));
+    const actualNames = await page.evaluate(() => state.items.map((i) => i.name));
+    check("並行処理で読み込んでも選択した順番のまま追加される（完了順に混ざらない）",
+      JSON.stringify(actualNames) === JSON.stringify(expectedNames), actualNames.join(","));
+  }
   check("エラー表示なし", await page.locator("#addErr").isHidden());
   check("サムネイルが表示されている",
     await page.evaluate(() => Array.from(document.querySelectorAll("#grid .tile img")).every((i) => i.complete && i.naturalWidth > 0)));
@@ -184,27 +190,32 @@ await run("iphone", { width: 390, height: 844 }, true);
   const page = await ctx.newPage();
   await page.goto(BASE + "/index.html", { waitUntil: "networkidle" });
 
-  // addOneFile を人為的に遅くして、キャンセル操作が間に合うようにする
+  // processFile (並行ワーカーが実際に呼ぶ関数) を人為的に遅くして、
+  // キャンセル操作が間に合うようにする。並行処理は複数枚を一気に片付けて
+  // しまうため、ファイル数も水増しして十分な時間を確保する。
   await page.evaluate(() => {
-    const real = addOneFile;
-    window.addOneFile = async (f) => {
-      await new Promise((r) => setTimeout(r, 60));
+    const real = processFile;
+    window.processFile = async (f) => {
+      await new Promise((r) => setTimeout(r, 150));
       return real(f);
     };
   });
+  const manyFiles = [...all, ...all, ...all];
 
-  await page.setInputFiles("#file", all);
+  await page.setInputFiles("#file", manyFiles);
 
   await page.waitForFunction(() => !document.getElementById("overlay").hidden, null, { timeout: 5000 });
   check("読み込み中はオーバーレイが表示される", true);
   check("読み込み中はキャンセルボタンが見える", await page.locator("#overlayCancel").isVisible());
   const countText = await page.textContent("#overlayCount");
-  check(`オーバーレイに枚数(N / ${all.length} 枚)が出る`, new RegExp(`/\\s*${all.length}\\s*枚`).test(countText), countText);
+  check(`オーバーレイに枚数(N / ${manyFiles.length} 枚)が出る`,
+    new RegExp(`/\\s*${manyFiles.length}\\s*枚`).test(countText), countText);
 
   await page.click("#overlayCancel");
   await page.waitForFunction(() => document.getElementById("overlay").hidden, null, { timeout: 10000 });
   const addedCount = await page.evaluate(() => state.items.length);
-  check("キャンセルすると途中で読み込みが止まる", addedCount > 0 && addedCount < all.length, `${addedCount}/${all.length}`);
+  check("キャンセルすると途中で読み込みが止まる",
+    addedCount > 0 && addedCount < manyFiles.length, `${addedCount}/${manyFiles.length}`);
   const errText = await page.textContent("#addErr");
   check("キャンセルした旨が表示される", errText.includes("キャンセルしました"), errText);
   check("キャンセル通知はエラー色ではなく控えめな表示になる",
